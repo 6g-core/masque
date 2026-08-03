@@ -23,10 +23,10 @@ func TestParseConfigUsesDefaultProxyAndPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseConfig() error = %v", err)
 	}
-	if cfg.proxyURL != "https://192.168.1.10:443" {
+	if cfg.proxyURL != "https://192.168.1.45:443" {
 		t.Fatalf("proxyURL = %q", cfg.proxyURL)
 	}
-	if cfg.uriTemplate != "https://192.168.1.10:443/masque?h={target_host}&p={target_port}" {
+	if cfg.uriTemplate != "https://192.168.1.45:443/masque?h={target_host}&p={target_port}" {
 		t.Fatalf("uriTemplate = %q", cfg.uriTemplate)
 	}
 	if cfg.target != "192.168.123.100:7400" {

@@ -53,16 +53,16 @@ Proxy 启动时只做服务准备，不会提前连接 Target：
 
 ```text
 Proxy 地址：
-    https://192.168.1.10:443
+    https://192.168.1.45:443
 
 URI Template：
-    https://192.168.1.10:443/masque/{target_host}/{target_port}
+    https://192.168.1.45:443/masque/{target_host}/{target_port}
 ```
 
 当前建议把 Proxy 地址做成配置项，默认值先使用：
 
 ```text
-https://192.168.1.10:443
+https://192.168.1.45:443
 ```
 
 后续如果 Proxy 所在机器 IP 变化，只需要修改配置中的 Proxy 地址，不应修改业务逻辑代码。
@@ -70,7 +70,7 @@ https://192.168.1.10:443
 当前代码使用 query 形式也可以：
 
 ```text
-https://192.168.1.10:443/masque?h={target_host}&p={target_port}
+https://192.168.1.45:443/masque?h={target_host}&p={target_port}
 ```
 
 对应入口文件：
@@ -81,16 +81,40 @@ https://192.168.1.10:443/masque?h={target_host}&p={target_port}
 
 | 参数 | 含义 |
 |---|---|
-| `-b` | Proxy HTTP/3 / QUIC 监听地址，例如 `192.168.1.10:443` |
+| `-b` | Proxy HTTP/3 / QUIC 监听地址，例如 `192.168.1.45:443` |
 | `-t` | URI Template，必须与 Client 侧保持一致 |
 | `-c` | TLS 证书文件 |
 | `-k` | TLS 私钥文件 |
 
-建议后续补充一个 Proxy 地址配置项，例如 `proxy_url` 或命令行参数 `-proxy`，默认值为 `https://192.168.1.10:443`，再由它生成默认 URI Template：
+当前代码已经补充 Proxy 地址配置项 `-proxy`，默认值为 `https://192.168.1.45:443`，再由它生成默认 URI Template：
 
 ```text
 {proxy_url}/masque?h={target_host}&p={target_port}
 ```
+
+当前默认启动参数：
+
+| 参数 | 默认值 | 含义 |
+|---|---|---|
+| `-proxy` | `https://192.168.1.45:443` | Proxy 对 Client 暴露的 HTTPS 地址，用于生成默认 URI Template |
+| `-b` | `0.0.0.0:443` | Proxy HTTP/3 / QUIC 监听地址 |
+| `-t` | 由 `-proxy` 自动生成 | 默认格式为 `{proxy_url}/masque?h={target_host}&p={target_port}` |
+| `-c` | `cert.pem` | TLS 证书文件 |
+| `-k` | `key.pem` | TLS 私钥文件 |
+
+因此在 `proxy` 目录下已经存在 `cert.pem` 和 `key.pem` 时，可以直接运行：
+
+```powershell
+go run ./cmd/proxy
+```
+
+启动成功后 Proxy 会打印当前监听地址、URI Template 和证书配置，便于确认默认配置已经生效：
+
+```text
+MASQUE Proxy ready: listen=0.0.0.0:443 template=https://192.168.1.45:443/masque?h={target_host}&p={target_port} cert=cert.pem key=key.pem
+```
+
+如果 Proxy IP 变化，只需要通过 `-proxy` 覆盖对外地址；监听地址、证书文件或 URI Template 有特殊要求时，再分别覆盖 `-b`、`-c`、`-k`、`-t`。
 
 ## 连接请求解析
 
@@ -164,7 +188,7 @@ Proxy 成功接受请求后，返回 HTTP/3 响应头：
 ```http
 :status = 200
 capsule-protocol = ?1
-proxy-status = 192.168.1.10:443; next-hop="192.168.123.100:7400"
+proxy-status = 192.168.1.45:443; next-hop="192.168.123.100:7400"
 ```
 
 最小成功响应：

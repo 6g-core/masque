@@ -3,6 +3,7 @@ coverage.txt
 *.sqlog
 
 .gocache/
+__pycache__/
 original/
 
 proxy/cert.pem

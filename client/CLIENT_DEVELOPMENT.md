@@ -21,18 +21,18 @@ Client 不直接连接 Target UDP Server，而是告诉 Proxy：
 当前 Proxy 地址规划为可配置项，默认先使用：
 
 ```text
-https://192.168.1.10:443
+https://192.168.1.45:443
 ```
 
 推荐 URI Template：
 
 ```text
-https://192.168.1.10:443/masque?h={target_host}&p={target_port}
+https://192.168.1.45:443/masque?h={target_host}&p={target_port}
 ```
 
 ## 需要开发的内容
 
-1. 配置 MASQUE Proxy 地址，例如 `https://192.168.1.10:443`。
+1. 配置 MASQUE Proxy 地址，例如 `https://192.168.1.45:443`。
 2. 配置与 Proxy 一致的 URI Template。
 3. 配置 Target UDP Server 地址，例如 `192.168.123.100:7400`。
 4. 创建 CONNECT-UDP 请求。
@@ -81,15 +81,15 @@ Client 需要提前知道两个地址：
 
 | 配置 | 示例 | 含义 |
 |---|---|---|
-| Proxy 地址 | `https://192.168.1.10:443` | Client 要连接的 MASQUE Proxy |
-| URI Template | `https://192.168.1.10:443/masque?h={target_host}&p={target_port}` | Client 与 Proxy 约定的 CONNECT-UDP 请求模板 |
+| Proxy 地址 | `https://192.168.1.45:443` | Client 要连接的 MASQUE Proxy |
+| URI Template | `https://192.168.1.45:443/masque?h={target_host}&p={target_port}` | Client 与 Proxy 约定的 CONNECT-UDP 请求模板 |
 | Target 地址 | `192.168.123.100:7400` | Proxy 最终转发到的 UDP 服务 |
 
 Client 侧准备示例：
 
 ```go
 template := uritemplate.MustNew(
-    "https://192.168.1.10:443/masque?h={target_host}&p={target_port}",
+    "https://192.168.1.45:443/masque?h={target_host}&p={target_port}",
 )
 
 target := "192.168.123.100:7400"
@@ -100,7 +100,7 @@ req, err := masque.NewRequest(ctx, template, target)
 这里需要区分：
 
 ```text
-https://192.168.1.10:443
+https://192.168.1.45:443
     是 MASQUE Proxy 地址。
 
 /masque?h={target_host}&p={target_port}
@@ -125,7 +125,7 @@ https://192.168.1.10:443
 使用 query 模板时，展开结果类似：
 
 ```text
-https://192.168.1.10:443/masque?h=192.168.123.100&p=7400
+https://192.168.1.45:443/masque?h=192.168.123.100&p=7400
 ```
 
 CONNECT-UDP 请求语义：
@@ -134,7 +134,7 @@ CONNECT-UDP 请求语义：
 :method = CONNECT
 :protocol = connect-udp
 :scheme = https
-:authority = 192.168.1.10:443
+:authority = 192.168.1.45:443
 :path = /masque?h=192.168.123.100&p=7400
 capsule-protocol = ?1
 ```
@@ -311,3 +311,78 @@ Client 如果在 `timeout` 内没有收到同一个 `request_id` 的响应，会
 ```
 
 Client 主要使用 `max_payload`、`max_retries` 和 `timeout`；`ttl`、`max_entries` 由 Target 去重缓存使用。启动时通过 `-config reliability.example.json` 指定配置文件。
+
+## Session 模式与 Python 风格接口
+
+为了解耦“建立 CONNECT-UDP 隧道”和“发送业务 payload”，Client 命令行新增 `-session` 模式。普通模式仍然是启动一次、发送一次、读取一次响应后退出；`-session` 模式会在启动时先建立一条到固定 Proxy 和固定 Target 的 MASQUE UDP 隧道，然后保持进程常驻，通过标准输入和标准输出接收控制命令。
+
+Session 模式的数据流如下：
+
+```text
+-------------+        stdin/stdout JSON Lines        +------------+
+| Python 调用层 |  ----------------------------------> | client.exe |
++-------------+                                       +------------+
+                                                             |
+                                                             | CONNECT-UDP + HTTP Datagram
+                                                             v
+                                                       MASQUE Proxy -> Target
+```
+
+Go Client 在 session 模式启动后：
+
+1. 根据 `-proxy`、`-target`、`-config`、`-insecure` 等参数建立 CONNECT-UDP 隧道。
+2. 建连成功后在 stdout 输出一行 JSON：`{"ok":true,"event":"ready"}`。
+3. 循环从 stdin 读取 JSON Lines 命令。
+4. 收到 `send` 命令时，调用现有 `exchangeReliablePayload()` 发送可靠请求，并等待匹配 `request_id` 的响应。
+5. 收到 `close` 命令时，关闭 `*masque.Conn` 并退出。
+
+stdin 命令格式：
+
+```json
+{"op":"send","payload":"hello"}
+```
+
+```json
+{"op":"close"}
+```
+
+stdout 响应格式：
+
+```json
+{"ok":true,"event":"ready"}
+```
+
+```json
+{"ok":true,"payload":"reply: hello","attempts":1}
+```
+
+```json
+{"ok":true,"event":"closed"}
+```
+
+如果发送失败、响应超时或 JSON 命令不合法，stdout 返回：
+
+```json
+{"ok":false,"error":"错误原因"}
+```
+
+为了便于 Python 稳定解析，session 模式约定 stdout 只输出 JSON Lines；普通运行日志继续使用 stderr。Python 侧通过 `subprocess.Popen()` 启动 `client.exe -session`，封装为：
+
+```python
+from call_client import MasqueClient
+
+client = MasqueClient(
+    client_exe="client.exe",
+    config="reliability.example.json",
+    proxy="https://192.168.1.45:443",
+    target="192.168.1.45:7400",
+    insecure=True,
+)
+
+client.connect()
+response = client.send("hello")
+print(response.payload)
+client.close()
+```
+
+当前轻量版 session 一个进程固定一个 Proxy 和一个 Target，`send()` 采用串行方式：每次发送都会等待本次响应或重试失败后才返回。后续如果需要并发发送，需要在 Go 侧增加独立读循环，并用 `request_id` 将响应分发给不同请求。

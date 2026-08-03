@@ -20,7 +20,7 @@ import (
 	"github.com/yosida95/uritemplate/v3"
 )
 
-const defaultProxyURL = "https://192.168.1.10:443"
+const defaultProxyURL = "https://192.168.1.45:443"
 
 // config 保存单次 Client 启动所需的全部运行参数。
 type config struct {
@@ -33,6 +33,7 @@ type config struct {
 	insecure       bool
 	configPath     string
 	reliability    ReliabilityConfig
+	session        bool
 }
 
 func main() {
@@ -44,10 +45,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
+	ctx, cancel := commandContext(cfg)
 	defer cancel()
 
-	if err := run(ctx, cfg); err != nil {
+	if cfg.session {
+		err = runSession(ctx, cfg, os.Stdin, os.Stdout)
+	} else {
+		err = run(ctx, cfg)
+	}
+	if err != nil {
 		log.Fatal(err)
 	}
 }
@@ -72,6 +78,7 @@ func parseConfig(args []string) (config, error) {
 	fs.DurationVar(&cfg.timeout, "timeout", cfg.timeout, "dial and read timeout")
 	fs.IntVar(&cfg.readBufferSize, "buf", cfg.readBufferSize, "UDP response read buffer size")
 	fs.BoolVar(&cfg.insecure, "insecure", false, "skip TLS certificate verification")
+	fs.BoolVar(&cfg.session, "session", false, "keep the tunnel open and read JSON commands from stdin")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
