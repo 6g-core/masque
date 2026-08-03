@@ -1,8 +1,11 @@
 package target
 
 import (
+	"bytes"
 	"context"
+	"log"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -108,6 +111,44 @@ func TestServerRepliesToMultipleSenders(t *testing.T) {
 	assertReply(t, second, "two", "reply: two")
 }
 
+func TestServerLogsReliablePayloadAsOriginalPayload(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var logs bytes.Buffer
+	srv := NewServer(Config{
+		ListenAddr:     "127.0.0.1:0",
+		ReplyPrefix:    "reply: ",
+		ReadBufferSize: 2048,
+		Logger:         log.New(&logs, "", 0),
+	})
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Close()
+		<-errCh
+	})
+
+	addr := waitForAddr(t, srv)
+	conn := dialUDP(t, addr)
+	defer conn.Close()
+
+	request, err := encodeReliableRequest("req-1", []byte("hello"))
+	if err != nil {
+		t.Fatalf("encodeReliableRequest() error = %v", err)
+	}
+	assertReliableReply(t, conn, "CLIENT-IP: 192.168.1.45\r\n\r\n"+string(request), "reply: hello")
+
+	got := logs.String()
+	if !strings.Contains(got, `request_id=req-1 payload="hello"`) {
+		t.Fatalf("log does not show original reliable payload; got:\n%s", got)
+	}
+	if strings.Contains(got, `"type":"request"`) {
+		t.Fatalf("log should not print raw reliable JSON envelope; got:\n%s", got)
+	}
+}
+
 func waitForAddr(t *testing.T, srv *Server) string {
 	t.Helper()
 
@@ -150,5 +191,26 @@ func assertReply(t *testing.T, conn *net.UDPConn, payload, want string) {
 	}
 	if got := string(buf[:n]); got != want {
 		t.Fatalf("reply mismatch for %q: got %q, want %q", payload, got, want)
+	}
+}
+
+func assertReliableReply(t *testing.T, conn *net.UDPConn, payload, want string) {
+	t.Helper()
+
+	if _, err := conn.Write([]byte(payload)); err != nil {
+		t.Fatalf("write reliable request: %v", err)
+	}
+	buf := make([]byte, 512)
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+	n, err := conn.Read(buf)
+	if err != nil {
+		t.Fatalf("read reliable reply: %v", err)
+	}
+	_, responsePayload, ok := decodeReliableResponse(buf[:n])
+	if !ok {
+		t.Fatalf("response is not reliable envelope: %q", buf[:n])
+	}
+	if got := string(responsePayload); got != want {
+		t.Fatalf("reliable reply mismatch: got %q, want %q", got, want)
 	}
 }

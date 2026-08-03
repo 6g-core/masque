@@ -31,6 +31,8 @@ type config struct {
 	timeout        time.Duration
 	readBufferSize int
 	insecure       bool
+	configPath     string
+	reliability    ReliabilityConfig
 }
 
 func main() {
@@ -58,9 +60,11 @@ func parseConfig(args []string) (config, error) {
 		payload:        "hello",
 		timeout:        5 * time.Second,
 		readBufferSize: 2048,
+		reliability:    defaultReliabilityConfig(),
 	}
 
 	fs := flag.NewFlagSet("client", flag.ContinueOnError)
+	fs.StringVar(&cfg.configPath, "config", "", "reliability config JSON file")
 	fs.StringVar(&cfg.proxyURL, "proxy", cfg.proxyURL, "MASQUE proxy URL")
 	fs.StringVar(&cfg.uriTemplate, "t", "", "URI template; overrides -proxy derived template")
 	fs.StringVar(&cfg.target, "target", "", "target UDP server address, host:port")
@@ -89,6 +93,14 @@ func parseConfig(args []string) (config, error) {
 	}
 	if cfg.timeout <= 0 {
 		return config{}, errors.New("-timeout must be positive")
+	}
+	reliability, err := loadReliabilityConfig(cfg.configPath, cfg.reliability)
+	if err != nil {
+		return config{}, err
+	}
+	cfg.reliability = reliability
+	if len([]byte(cfg.payload)) > cfg.reliability.MaxPayloadBytes {
+		return config{}, fmt.Errorf("payload size %d exceeds max_payload %d", len([]byte(cfg.payload)), cfg.reliability.MaxPayloadBytes)
 	}
 	return cfg, nil
 }
@@ -134,16 +146,11 @@ func run(ctx context.Context, cfg config) error {
 	defer conn.Close()
 
 	log.Printf("connected MASQUE UDP tunnel: %s -> %s", conn.LocalAddr(), conn.RemoteAddr())
-	if err := sendPayload(conn, []byte(cfg.payload)); err != nil {
-		return err
-	}
-	log.Printf("sent payload to target %s: %q", cfg.target, cfg.payload)
-
-	payload, addr, err := readResponse(conn, cfg.timeout, cfg.readBufferSize)
+	payload, addr, attempts, err := exchangeReliablePayload(conn, []byte(cfg.payload), cfg.reliability, newRequestID())
 	if err != nil {
 		return err
 	}
-	log.Printf("received response from %s: %s", addr, string(payload))
+	log.Printf("received response from %s after %d attempt(s): %s", addr, attempts, string(payload))
 	return nil
 }
 

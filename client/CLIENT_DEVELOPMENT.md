@@ -275,3 +275,39 @@ clientConn，一条 QUIC 连接
 - `8.6 Client 接收响应`
 - `10. 多目标服务如何区分`
 - `11. 关键结论`
+
+## 可靠请求重试
+
+为降低 Datagram 丢包对请求响应类业务的影响，Client 在发送前会把原始业务 Payload 封装为可靠请求信封：
+
+```json
+{
+  "type": "request",
+  "request_id": "<唯一请求ID>",
+  "payload": "<base64编码后的原始payload>"
+}
+```
+
+Target 响应时返回同一个 `request_id`：
+
+```json
+{
+  "type": "response",
+  "request_id": "<同一个请求ID>",
+  "payload": "<base64编码后的响应payload>"
+}
+```
+
+Client 如果在 `timeout` 内没有收到同一个 `request_id` 的响应，会使用同一个请求信封重发，最多重试 `max_retries` 次。配置文件字段如下：
+
+```json
+{
+  "ttl": "2m",
+  "max_entries": 10000,
+  "max_payload": 1000,
+  "max_retries": 3,
+  "timeout": "1s"
+}
+```
+
+Client 主要使用 `max_payload`、`max_retries` 和 `timeout`；`ttl`、`max_entries` 由 Target 去重缓存使用。启动时通过 `-config reliability.example.json` 指定配置文件。

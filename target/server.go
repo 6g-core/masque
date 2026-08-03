@@ -18,13 +18,15 @@ type Config struct {
 	ReplyPrefix    string
 	ReadBufferSize int
 	Logger         *log.Logger
+	Reliability    ReliabilityConfig
 }
 
 type Server struct {
 	cfg Config
 
-	mu   sync.Mutex
-	conn *net.UDPConn
+	mu    sync.Mutex
+	conn  *net.UDPConn
+	cache *reliableCache
 }
 
 type Message struct {
@@ -39,7 +41,11 @@ func NewServer(cfg Config) *Server {
 	if cfg.ReadBufferSize <= 0 {
 		cfg.ReadBufferSize = defaultReadBufferSize
 	}
-	return &Server{cfg: cfg}
+	cfg.Reliability = normalizeReliabilityConfig(cfg.Reliability)
+	return &Server{
+		cfg:   cfg,
+		cache: newReliableCache(cfg.Reliability),
+	}
 }
 
 func (s *Server) Serve(ctx context.Context) error {
@@ -80,12 +86,8 @@ func (s *Server) Serve(ctx context.Context) error {
 
 		msg, _ := parseClientIPPayload(buf[:n])
 		payload := append([]byte(nil), msg.Payload...)
-		if msg.ClientIP != "" {
-			s.logf("received from %s for client %s: %q", remote, msg.ClientIP, payload)
-		} else {
-			s.logf("received from %s: %q", remote, payload)
-		}
-		reply := append([]byte(s.cfg.ReplyPrefix), payload...)
+		s.logReceivedMessage(remote, msg.ClientIP, payload)
+		reply := s.replyPayload(payload)
 		if _, err := conn.WriteToUDP(reply, remote); err != nil {
 			if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
 				return nil
@@ -93,6 +95,48 @@ func (s *Server) Serve(ctx context.Context) error {
 			return fmt.Errorf("write udp reply to %s: %w", remote, err)
 		}
 	}
+}
+
+func (s *Server) logReceivedMessage(remote net.Addr, clientIP string, payload []byte) {
+	requestID, reliablePayload, ok := decodeReliableRequest(payload)
+	if ok {
+		if clientIP != "" {
+			s.logf("received reliable request from %s for client %s request_id=%s payload=%q", remote, clientIP, requestID, reliablePayload)
+			return
+		}
+		s.logf("received reliable request from %s request_id=%s payload=%q", remote, requestID, reliablePayload)
+		return
+	}
+	if clientIP != "" {
+		s.logf("received from %s for client %s: %q", remote, clientIP, payload)
+		return
+	}
+	s.logf("received from %s: %q", remote, payload)
+}
+
+func (s *Server) replyPayload(payload []byte) []byte {
+	requestID, reliablePayload, ok := decodeReliableRequest(payload)
+	if !ok {
+		return append([]byte(s.cfg.ReplyPrefix), payload...)
+	}
+	if len(reliablePayload) > s.cfg.Reliability.MaxPayloadBytes {
+		response, err := encodeReliableResponse(requestID, []byte("error: payload too large"))
+		if err != nil {
+			return []byte("error: payload too large")
+		}
+		return response
+	}
+	responsePayload, duplicate := s.cache.reply(requestID, func() []byte {
+		return append([]byte(s.cfg.ReplyPrefix), reliablePayload...)
+	})
+	if duplicate {
+		s.logf("duplicate reliable request request_id=%s", requestID)
+	}
+	response, err := encodeReliableResponse(requestID, responsePayload)
+	if err != nil {
+		return []byte("error: encode reliable response")
+	}
+	return response
 }
 
 func parseClientIPPayload(data []byte) (Message, bool) {

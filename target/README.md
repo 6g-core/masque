@@ -146,4 +146,46 @@ sendto(reply, addr)
 - `8.2 Target UDP Server 回包逻辑`
 - `8.3 UDP socket 是否只能一对一`
 - `8.4 Target 到 Proxy 的 UDP 消息格式`
+
+## 可靠请求去重缓存
+
+Target 支持解析 Client 封装的可靠请求信封：
+
+```json
+{
+  "type": "request",
+  "request_id": "<唯一请求ID>",
+  "payload": "<base64编码后的原始payload>"
+}
+```
+
+首次收到某个 `request_id` 时，Target 会基于原始业务 payload 生成响应，并缓存：
+
+```text
+request_id -> response payload
+```
+
+如果在 `ttl` 时间内再次收到同一个 `request_id`，Target 不重复执行业务处理，直接返回缓存响应。响应格式为：
+
+```json
+{
+  "type": "response",
+  "request_id": "<同一个请求ID>",
+  "payload": "<base64编码后的响应payload>"
+}
+```
+
+可靠机制配置文件示例：
+
+```json
+{
+  "ttl": "2m",
+  "max_entries": 10000,
+  "max_payload": 1000,
+  "max_retries": 3,
+  "timeout": "1s"
+}
+```
+
+Target 主要使用 `ttl`、`max_entries` 和 `max_payload`；`max_retries`、`timeout` 由 Client 使用。启动时通过 `-config reliability.example.json` 指定配置文件。
 - `11. 关键结论`
