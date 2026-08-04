@@ -2,22 +2,31 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_CLIENT_EXE = SCRIPT_DIR / "client.exe"
-DEFAULT_CONFIG = SCRIPT_DIR / "reliability.example.json"
-DEFAULT_PROXY = "https://192.168.1.45:443"
-DEFAULT_TARGET = "192.168.1.45:7400"
-DEFAULT_PAYLOAD = "hello"
-DEFAULT_TIMEOUT_SECONDS = 10
+DEFAULT_CONFIG = SCRIPT_DIR / "config.json"
+CONFIG_FIELDS = (
+    "client_exe",
+    "proxy",
+    "target",
+    "timeout_seconds",
+    "insecure",
+)
+
+
+@dataclass
+class RuntimeConfig:
+    client_exe: str
+    config: str
+    proxy: str
+    target: str
+    timeout: float
+    insecure: bool
 
 
 @dataclass
@@ -29,12 +38,12 @@ class SendResponse:
 class MasqueClient:
     def __init__(
         self,
-        client_exe: str | Path = DEFAULT_CLIENT_EXE,
-        config: str | Path = DEFAULT_CONFIG,
-        proxy: str = DEFAULT_PROXY,
-        target: str = DEFAULT_TARGET,
-        timeout: float = DEFAULT_TIMEOUT_SECONDS,
-        insecure: bool = False,
+        client_exe: str | Path,
+        config: str | Path,
+        proxy: str,
+        target: str,
+        timeout: float,
+        insecure: bool,
     ) -> None:
         self.client_exe = str(client_exe)
         self.config = str(config)
@@ -112,40 +121,34 @@ class MasqueClient:
         return rsp
 
 
-def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Call client.exe session mode with a Python-style interface.",
+def load_runtime_config(config_path: str | Path) -> RuntimeConfig:
+    path = Path(config_path)
+    if not path.exists():
+        raise FileNotFoundError(f"config file not found: {path}")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    missing = [field for field in CONFIG_FIELDS if field not in raw]
+    if missing:
+        raise ValueError(f"missing config field(s): {', '.join(missing)}")
+    client_exe = Path(str(raw["client_exe"]))
+    if not client_exe.is_absolute():
+        client_exe = path.parent / client_exe
+    return RuntimeConfig(
+        client_exe=str(client_exe),
+        config=str(path),
+        proxy=str(raw["proxy"]),
+        target=str(raw["target"]),
+        timeout=float(raw["timeout_seconds"]),
+        insecure=bool(raw["insecure"]),
     )
-    parser.add_argument("--client-exe", default=str(DEFAULT_CLIENT_EXE))
-    parser.add_argument("--config", default=str(DEFAULT_CONFIG))
-    parser.add_argument("--proxy", default=DEFAULT_PROXY)
-    parser.add_argument("--target", default=DEFAULT_TARGET)
-    parser.add_argument("--payload", default=DEFAULT_PAYLOAD)
-    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
-    parser.add_argument("--insecure", action="store_true")
-    return parser.parse_args(argv)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    args = parse_args(argv)
-    client = MasqueClient(
-        client_exe=args.client_exe,
-        config=args.config,
-        proxy=args.proxy,
-        target=args.target,
-        timeout=args.timeout,
-        insecure=args.insecure,
+def client_from_config(config_path: str | Path = DEFAULT_CONFIG) -> MasqueClient:
+    cfg = load_runtime_config(config_path)
+    return MasqueClient(
+        client_exe=cfg.client_exe,
+        config=cfg.config,
+        proxy=cfg.proxy,
+        target=cfg.target,
+        timeout=cfg.timeout,
+        insecure=cfg.insecure,
     )
-    try:
-        client.connect()
-        response = client.send(args.payload)
-        print(f"received response after {response.attempts} attempt(s): {response.payload}")
-        client.close()
-    except Exception as exc:
-        print(f"client failed: {exc}", file=sys.stderr)
-        return 1
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

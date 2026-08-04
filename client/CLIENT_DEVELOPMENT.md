@@ -310,7 +310,7 @@ Client 如果在 `timeout` 内没有收到同一个 `request_id` 的响应，会
 }
 ```
 
-Client 主要使用 `max_payload`、`max_retries` 和 `timeout`；`ttl`、`max_entries` 由 Target 去重缓存使用。启动时通过 `-config reliability.example.json` 指定配置文件。
+Client 主要使用 `max_payload`、`max_retries` 和 `timeout`；`ttl`、`max_entries` 由 Target 去重缓存使用。启动时通过 `-config config.json` 指定配置文件。
 
 ## Session 模式与 Python 风格接口
 
@@ -369,16 +369,9 @@ stdout 响应格式：
 为了便于 Python 稳定解析，session 模式约定 stdout 只输出 JSON Lines；普通运行日志继续使用 stderr。Python 侧通过 `subprocess.Popen()` 启动 `client.exe -session`，封装为：
 
 ```python
-from call_client import MasqueClient
+from masque_client import client_from_config
 
-client = MasqueClient(
-    client_exe="client.exe",
-    config="reliability.example.json",
-    proxy="https://192.168.1.45:443",
-    target="192.168.1.45:7400",
-    insecure=True,
-)
-
+client = client_from_config()
 client.connect()
 response = client.send("hello")
 print(response.payload)
@@ -386,3 +379,30 @@ client.close()
 ```
 
 当前轻量版 session 一个进程固定一个 Proxy 和一个 Target，`send()` 采用串行方式：每次发送都会等待本次响应或重试失败后才返回。后续如果需要并发发送，需要在 Go 侧增加独立读循环，并用 `request_id` 将响应分发给不同请求。
+
+Python 调用层默认读取同目录下的 `config.json`。该文件同时包含 Python 连接参数和 Go 可靠性参数，Python 代码不再内置 `proxy`、`target` 等环境默认值；业务 payload 由入口脚本 `run_client.py` 中的 `PAYLOAD` 常量决定：
+
+```json
+{
+  "client_exe": "client.exe",
+  "proxy": "https://192.168.1.45:443",
+  "target": "192.168.1.45:7400",
+  "timeout_seconds": 10,
+  "insecure": true,
+  "ttl": "2m",
+  "max_entries": 10000,
+  "max_payload": 1000,
+  "max_retries": 3,
+  "timeout": "1s"
+}
+```
+
+Python 使用 `client_exe`、`proxy`、`target`、`timeout_seconds`、`insecure` 作为默认调用参数，这些字段必须存在；然后把同一个 `config.json` 传给 Go Client 的 `-config`。Go Client 会读取 `max_payload`、`max_retries`、`timeout` 等可靠性字段，并忽略不认识的 Python 专用字段。
+
+如果 `client_exe` 是相对路径，例如 `"client.exe"`，Python 会按 `config.json` 所在目录解析，便于把 `client.exe`、`masque_client.py`、`run_client.py` 和 `config.json` 作为最小运行包复制到另一台机器。
+
+如果需要修改 Proxy 或 Target，直接修改 `config.json`；如果需要修改 Python 业务 payload，修改 `run_client.py` 里的 `PAYLOAD` 常量。`masque_client.py` 是纯工具模块，不再作为脚本入口；业务启动流程放在 `run_client.py`。Python 脚本入口不再解析 `--target`、`--proxy`、`--payload` 等命令行参数；传入命令行参数会直接返回错误，避免运行参数来源混乱。
+
+```powershell
+python .\run_client.py
+```

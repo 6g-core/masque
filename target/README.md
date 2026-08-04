@@ -187,5 +187,5 @@ request_id -> response payload
 }
 ```
 
-Target 主要使用 `ttl`、`max_entries` 和 `max_payload`；`max_retries`、`timeout` 由 Client 使用。启动时通过 `-config reliability.example.json` 指定配置文件。
+Target 主要使用 `ttl`、`max_entries` 和 `max_payload`；`max_retries`、`timeout` 由 Client 使用。启动时可以通过 `-config reliability.example.json` 指定 Target 目录下的示例配置文件。Client 侧推荐统一使用 `client/config.json`，`client/reliability.example.json` 已删除。
 - `11. 关键结论`

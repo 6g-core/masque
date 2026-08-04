@@ -1,0 +1,12 @@
+{
+  "client_exe": "client.exe",
+  "proxy": "https://192.168.1.45:443",
+  "target": "192.168.1.45:7400",
+  "timeout_seconds": 10,
+  "insecure": true,
+  "ttl": "2m",
+  "max_entries": 10000,
+  "max_payload": 1000,
+  "max_retries": 3,
+  "timeout": "1s"
+}
