@@ -1,7 +1,7 @@
 {
   "client_exe": "client.exe",
   "proxy": "https://192.168.1.45:443",
-  "target": "192.168.1.45:7400",
+  "target": "192.168.1.107:7400",
   "timeout_seconds": 10,
   "insecure": false,
   "ttl": "2m",

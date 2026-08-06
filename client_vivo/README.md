@@ -36,7 +36,7 @@ python .\run_client.py
 如果客户端要发送的内容变化，修改 `run_client.py`：
 
 ```python
-PAYLOAD = "hello"
+PAYLOAD = json.dumps({...}, ensure_ascii=False)
 ```
 
 ## 文件说明
@@ -54,7 +54,7 @@ PAYLOAD = "hello"
 `run_client.py` 里最常改的是：
 
 ```python
-PAYLOAD = "hello"
+PAYLOAD = json.dumps({...}, ensure_ascii=False)
 ```
 
 `main()` 会按下面流程执行：

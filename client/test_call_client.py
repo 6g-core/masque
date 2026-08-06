@@ -58,6 +58,17 @@ class MasqueClientTests(unittest.TestCase):
         self.assertIn('if __name__ == "__main__":', source)
         self.assertIn("raise SystemExit(main())", source)
 
+    def test_payload_contains_flexible_qos_request_json(self):
+        payload = json.loads(PAYLOAD)
+
+        self.assertEqual("req-flexible-qos-20260721-001", payload["request_id"])
+        self.assertEqual(11222, payload["RNTI"])
+        self.assertEqual(1, payload["qfi"])
+        self.assertEqual("192.168.1.100", payload["packet_filter"]["src_ip"])
+        self.assertEqual(443, payload["packet_filter"]["dst_port"])
+        self.assertEqual("VideoStreaming", payload["service_info"]["service_type"])
+        self.assertEqual(4.2, payload["service_info"]["service_experience"]["mos_score"])
+
     def test_load_runtime_config_requires_config_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             config_path = Path(tmp) / "missing.json"
