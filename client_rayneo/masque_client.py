@@ -68,12 +68,54 @@ class MasqueClient:
             raise RuntimeError(f"unexpected session response: {rsp}")
 
     def send(self, payload: str) -> SendResponse:
+        for attempt in range(2):
+            if self.proc is None:
+                try:
+                    self.connect()
+                except Exception:
+                    self._discard_process()
+                    if attempt == 1:
+                        raise
+                    continue
+            try:
+                return self._send_connected(payload)
+            except Exception as exc:
+                if not self._is_session_failure(exc):
+                    raise
+                self._discard_process()
+                if attempt == 1:
+                    raise
+        raise RuntimeError("failed to establish client session")
+
+    def _send_connected(self, payload: str) -> SendResponse:
         self._write_command({"op": "send", "payload": payload})
         rsp = self._read_response()
         return SendResponse(
             payload=str(rsp.get("payload", "")),
             attempts=int(rsp.get("attempts", 0)),
         )
+
+    @staticmethod
+    def _is_session_failure(exc: Exception) -> bool:
+        if isinstance(exc, (BrokenPipeError, OSError, json.JSONDecodeError)):
+            return True
+        message = str(exc).lower()
+        return (
+            "send payload:" in message
+            or "client session closed unexpectedly" in message
+        )
+
+    def _discard_process(self) -> None:
+        proc = self.proc
+        self.proc = None
+        if proc is None:
+            return
+        proc.terminate()
+        try:
+            proc.wait(timeout=self.timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=self.timeout)
 
     def close(self) -> None:
         if self.proc is None:

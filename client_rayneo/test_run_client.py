@@ -7,7 +7,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from unittest import mock
 
-from run_client import PAYLOAD, build_qos_handler
+from run_client import PAYLOAD, build_qos_handler, main
 
 
 class FakeResponse:
@@ -25,6 +25,18 @@ class FakeClient:
 
 
 class RunClientServerTests(unittest.TestCase):
+    def test_main_starts_http_server_without_eager_proxy_connection(self):
+        client = mock.Mock()
+        with (
+            mock.patch("run_client.client_from_config", return_value=client),
+            mock.patch("run_client.run_qos_server") as run_server,
+        ):
+            exit_code = main([])
+
+        self.assertEqual(0, exit_code)
+        client.connect.assert_not_called()
+        run_server.assert_called_once_with(client)
+
     def test_send_qos_posts_hardcoded_payload_and_returns_response(self):
         client = FakeClient()
         stdout = io.StringIO()
