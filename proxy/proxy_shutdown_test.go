@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -63,13 +64,22 @@ func TestProxyLifecycleLogs(t *testing.T) {
 	got := buf.String()
 	wants := []string{
 		"accepted CONNECT-UDP tunnel client_ip=192.168.1.20 target=192.168.1.45:7400 udp_local=192.168.1.45:63675 udp_remote=192.168.1.45:7400",
-		"forward client->target client_ip=192.168.1.20 target=192.168.1.45:7400 payload_bytes=5 wrapped_bytes=30",
-		"forward target->client target=192.168.1.45:7400 payload_bytes=12",
 		"closed CONNECT-UDP tunnel client_ip=192.168.1.20 target=192.168.1.45:7400",
 	}
 	for _, want := range wants {
 		if !strings.Contains(got, want) {
 			t.Fatalf("log output missing %q; got:\n%s", want, got)
+		}
+	}
+
+	timePattern := `\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2}`
+	patterns := []string{
+		`forward client->target time=` + timePattern + ` client_ip=192\.168\.1\.20 target=192\.168\.1\.45:7400 payload_bytes=5 wrapped_bytes=30`,
+		`forward target->client time=` + timePattern + ` target=192\.168\.1\.45:7400 payload_bytes=12`,
+	}
+	for _, pattern := range patterns {
+		if !regexp.MustCompile(pattern).MatchString(got) {
+			t.Fatalf("log output missing pattern %q; got:\n%s", pattern, got)
 		}
 	}
 }

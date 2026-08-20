@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dunglas/httpsfv"
 	"github.com/quic-go/quic-go"
@@ -200,15 +201,19 @@ func logTunnelAccepted(clientIP, target string, udpLocal, udpRemote net.Addr) {
 }
 
 func logForwardClientToTarget(clientIP, target string, payloadBytes, wrappedBytes int) {
-	log.Printf("forward client->target client_ip=%s target=%s payload_bytes=%d wrapped_bytes=%d", clientIP, target, payloadBytes, wrappedBytes)
+	log.Printf("forward client->target time=%s client_ip=%s target=%s payload_bytes=%d wrapped_bytes=%d", proxyLogTime(), clientIP, target, payloadBytes, wrappedBytes)
 }
 
 func logForwardTargetToClient(target string, payloadBytes int) {
-	log.Printf("forward target->client target=%s payload_bytes=%d", target, payloadBytes)
+	log.Printf("forward target->client time=%s target=%s payload_bytes=%d", proxyLogTime(), target, payloadBytes)
 }
 
 func logTunnelClosed(clientIP, target string) {
 	log.Printf("closed CONNECT-UDP tunnel client_ip=%s target=%s", clientIP, target)
+}
+
+func proxyLogTime() string {
+	return time.Now().Format("2006-01-02T15:04:05.000-07:00")
 }
 
 func shouldLogRequestStreamError(err error) bool {
