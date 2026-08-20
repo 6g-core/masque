@@ -6,5 +6,3 @@ coverage.txt
 __pycache__/
 original/
 
-proxy/cert.pem
-proxy/key.pem

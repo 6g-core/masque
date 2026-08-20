@@ -12,32 +12,22 @@ from masque_client import client_from_config
 PAYLOAD = json.dumps(
     {
         "request_id": "req-flexible-qos-20260721-001",
-        "RNTI": 11222,
+        "RNTI": 1,
         "qfi": 1,
         "packet_filter": {
             "src_ip": "192.168.1.100",
-            "dst_ip": "10.0.0.5",
+            "dst_ip": "192.168.1.10",
             "src_port": 50000,
-            "dst_port": 443,
+            "dst_port": 8787,
             "protocol": 6,
         },
         "traffic_pattern": "streaming",
-        "source_address": "192.168.1.100",
         "burst_info": {
-            "ul_burst_size": 2048,
-            "ul_burst_duration": 100,
-            "arrive_time_to_next_burst": 50,
+            "ul_burst_size": 2047,
+            "ul_burst_duration": 3000
         },
         "service_info": {
-            "service_type": "VideoStreaming",
-            "frame_rate": 30,
-            "max_frame_size": 150000,
-            "resolution": "1920x1080",
-            "code_rate": 5000,
-            "e2e_delay": 160,
-            "service_experience": {
-                "mos_score": 4.2,
-            },
+            "e2e_delay": 160
         },
     },
     ensure_ascii=False,
