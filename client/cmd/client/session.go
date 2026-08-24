@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/quic-go/masque-go"
 	"github.com/quic-go/quic-go"
@@ -99,13 +100,30 @@ func runSessionLoop(conn net.PacketConn, in io.Reader, out io.Writer, cfg Reliab
 }
 
 func runSessionSend(conn net.PacketConn, encoder *json.Encoder, payload []byte, cfg ReliabilityConfig, nextRequestID func() string) error {
-	responsePayload, _, attempts, err := exchangeReliablePayload(conn, payload, cfg, nextRequestID())
+	requestID := nextRequestID()
+	started := time.Now()
+	log.Printf("session send start request_id=%s payload_bytes=%d", requestID, len(payload))
+	responsePayload, _, attempts, err := exchangeReliablePayload(conn, payload, cfg, requestID)
 	if err != nil {
+		log.Printf(
+			"session send failure request_id=%s attempts=%d duration_ms=%d error=%v",
+			requestID,
+			attempts,
+			time.Since(started).Milliseconds(),
+			err,
+		)
 		if writeErr := encoder.Encode(sessionResponse{OK: false, Error: err.Error(), Attempts: attempts}); writeErr != nil {
 			return fmt.Errorf("write send error response: %w", writeErr)
 		}
 		return nil
 	}
+	log.Printf(
+		"session send success request_id=%s attempts=%d duration_ms=%d response_bytes=%d",
+		requestID,
+		attempts,
+		time.Since(started).Milliseconds(),
+		len(responsePayload),
+	)
 	return encoder.Encode(sessionResponse{
 		OK:       true,
 		Payload:  string(responsePayload),

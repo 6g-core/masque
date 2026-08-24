@@ -6,6 +6,7 @@ import json
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -88,8 +89,15 @@ class MasqueClient:
         raise RuntimeError("failed to establish client session")
 
     def _send_connected(self, payload: str) -> SendResponse:
+        started = perf_counter()
         self._write_command({"op": "send", "payload": payload})
         rsp = self._read_response()
+        duration_ms = int((perf_counter() - started) * 1000)
+        print(
+            "session send completed "
+            f"attempts={int(rsp.get('attempts', 0))} "
+            f"duration_ms={duration_ms}"
+        )
         return SendResponse(
             payload=str(rsp.get("payload", "")),
             attempts=int(rsp.get("attempts", 0)),

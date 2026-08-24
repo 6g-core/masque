@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from time import perf_counter
 from typing import Sequence
 
 from masque_client import client_from_config
@@ -41,6 +42,7 @@ PAYLOAD = json.dumps(
 def build_qos_handler(client):
     class QosHandler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:
+            request_started = perf_counter()
             print(
                 f"received HTTP request method=POST path={self.path} "
                 f"remote={self.client_address[0]}:{self.client_address[1]}"
@@ -54,10 +56,25 @@ def build_qos_handler(client):
                 self.rfile.read(content_length)
 
             try:
+                send_started = perf_counter()
                 response = client.send(PAYLOAD)
+                send_duration_ms = int((perf_counter() - send_started) * 1000)
             except Exception as exc:
+                total_duration_ms = int((perf_counter() - request_started) * 1000)
+                print(
+                    "send_qos failed "
+                    f"duration_ms={total_duration_ms} error={exc}"
+                )
                 self._write_json(500, {"ok": False, "error": str(exc)})
                 return
+
+            total_duration_ms = int((perf_counter() - request_started) * 1000)
+            print(
+                "send_qos completed "
+                f"attempts={response.attempts} "
+                f"client_send_ms={send_duration_ms} "
+                f"duration_ms={total_duration_ms}"
+            )
 
             self._write_json(
                 200,

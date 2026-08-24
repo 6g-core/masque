@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"log"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +62,43 @@ func TestRunSessionLoopKeepsTunnelOpenForSendThenClose(t *testing.T) {
 	}
 	if !responses[2].OK || responses[2].Event != "closed" {
 		t.Fatalf("close response = %+v, want closed", responses[2])
+	}
+}
+
+func TestRunSessionLoopLogsSendTiming(t *testing.T) {
+	response, err := encodeReliableResponse("req-1", []byte("reply: hello"))
+	if err != nil {
+		t.Fatalf("encodeReliableResponse() error = %v", err)
+	}
+	conn := &fakePacketConn{
+		readData: response,
+		readAddr: fakeAddr("target"),
+	}
+	input := strings.NewReader(`{"op":"send","payload":"hello"}` + "\n")
+	var output bytes.Buffer
+	var logs bytes.Buffer
+
+	originalWriter := log.Writer()
+	log.SetOutput(&logs)
+	defer log.SetOutput(originalWriter)
+
+	err = runSessionLoop(conn, input, &output, ReliabilityConfig{
+		MaxRetries:      3,
+		Timeout:         time.Millisecond,
+		MaxPayloadBytes: 1000,
+	}, func() string { return "req-1" })
+	if err != nil {
+		t.Fatalf("runSessionLoop() error = %v", err)
+	}
+	got := logs.String()
+	if !strings.Contains(got, "session send start request_id=req-1 payload_bytes=5") {
+		t.Fatalf("logs missing send start: %s", got)
+	}
+	if !strings.Contains(got, "session send success request_id=req-1 attempts=1") {
+		t.Fatalf("logs missing send success: %s", got)
+	}
+	if !strings.Contains(got, "duration_ms=") {
+		t.Fatalf("logs missing duration: %s", got)
 	}
 }
 

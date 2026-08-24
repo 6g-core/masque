@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"time"
@@ -165,23 +166,59 @@ func exchangeReliablePayload(conn net.PacketConn, payload []byte, cfg Reliabilit
 	}
 	var lastErr error
 	for attempt := 1; attempt <= cfg.MaxRetries+1; attempt++ {
+		attemptStarted := time.Now()
+		log.Printf("reliable attempt start request_id=%s attempt=%d payload_bytes=%d", requestID, attempt, len(payload))
 		if err := sendPayload(conn, request); err != nil {
 			return nil, nil, attempt, err
 		}
+		waitStarted := time.Now()
 		response, addr, err := readResponse(conn, cfg.Timeout, reliableReadBufferSize(cfg))
 		if err != nil {
+			log.Printf(
+				"reliable attempt read_error request_id=%s attempt=%d wait_ms=%d total_ms=%d error=%v",
+				requestID,
+				attempt,
+				time.Since(waitStarted).Milliseconds(),
+				time.Since(attemptStarted).Milliseconds(),
+				err,
+			)
 			lastErr = err
 			continue
 		}
 		responseID, responsePayload, err := decodeReliableResponse(response)
 		if err != nil {
+			log.Printf(
+				"reliable attempt decode_error request_id=%s attempt=%d wait_ms=%d total_ms=%d error=%v",
+				requestID,
+				attempt,
+				time.Since(waitStarted).Milliseconds(),
+				time.Since(attemptStarted).Milliseconds(),
+				err,
+			)
 			lastErr = err
 			continue
 		}
 		if responseID != requestID {
+			log.Printf(
+				"reliable attempt mismatched_response request_id=%s attempt=%d response_id=%s wait_ms=%d total_ms=%d",
+				requestID,
+				attempt,
+				responseID,
+				time.Since(waitStarted).Milliseconds(),
+				time.Since(attemptStarted).Milliseconds(),
+			)
 			lastErr = fmt.Errorf("unexpected response request_id %q", responseID)
 			continue
 		}
+		log.Printf(
+			"reliable attempt success request_id=%s attempt=%d wait_ms=%d total_ms=%d response_bytes=%d from=%s",
+			requestID,
+			attempt,
+			time.Since(waitStarted).Milliseconds(),
+			time.Since(attemptStarted).Milliseconds(),
+			len(responsePayload),
+			addr,
+		)
 		return responsePayload, addr, attempt, nil
 	}
 	return nil, nil, cfg.MaxRetries + 1, fmt.Errorf("request %s failed after %d retries: %w", requestID, cfg.MaxRetries, lastErr)

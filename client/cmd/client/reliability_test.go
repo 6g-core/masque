@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"errors"
+	"log"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -115,5 +118,55 @@ func TestExchangeReliablePayloadFailsAfterMaxRetries(t *testing.T) {
 	}
 	if attempts != 2 {
 		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
+func TestExchangeReliablePayloadLogsAttemptOutcomes(t *testing.T) {
+	mismatch, err := encodeReliableResponse("req-old", []byte("reply: stale"))
+	if err != nil {
+		t.Fatalf("encodeReliableResponse() error = %v", err)
+	}
+	match, err := encodeReliableResponse("req-1", []byte("reply: hello"))
+	if err != nil {
+		t.Fatalf("encodeReliableResponse() error = %v", err)
+	}
+	conn := &retryPacketConn{
+		reads: []retryRead{
+			{err: errors.New("timeout")},
+			{data: mismatch},
+			{data: match},
+		},
+	}
+	var logs bytes.Buffer
+	originalWriter := log.Writer()
+	log.SetOutput(&logs)
+	defer log.SetOutput(originalWriter)
+
+	_, _, attempts, err := exchangeReliablePayload(conn, []byte("hello"), ReliabilityConfig{
+		MaxRetries:      3,
+		Timeout:         time.Millisecond,
+		MaxPayloadBytes: 1000,
+	}, "req-1")
+	if err != nil {
+		t.Fatalf("exchangeReliablePayload() error = %v", err)
+	}
+	if attempts != 3 {
+		t.Fatalf("attempts = %d, want 3", attempts)
+	}
+	got := logs.String()
+	if !strings.Contains(got, "reliable attempt start request_id=req-1 attempt=1") {
+		t.Fatalf("logs missing attempt 1 start: %s", got)
+	}
+	if !strings.Contains(got, "reliable attempt read_error request_id=req-1 attempt=1") {
+		t.Fatalf("logs missing attempt 1 read error: %s", got)
+	}
+	if !strings.Contains(got, "reliable attempt mismatched_response request_id=req-1 attempt=2 response_id=req-old") {
+		t.Fatalf("logs missing mismatched response: %s", got)
+	}
+	if !strings.Contains(got, "reliable attempt success request_id=req-1 attempt=3") {
+		t.Fatalf("logs missing success: %s", got)
+	}
+	if !strings.Contains(got, "wait_ms=") {
+		t.Fatalf("logs missing wait_ms: %s", got)
 	}
 }
