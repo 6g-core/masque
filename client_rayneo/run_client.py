@@ -20,7 +20,7 @@ PAYLOAD = json.dumps(
         "RNTI": 1,
         "qfi": 1,
         "packet_filter": {
-            "src_ip": "192.168.1.100",
+            "src_ip": "10.60.0.201",
             "dst_ip": "192.168.1.10",
             "src_port": 50000,
             "dst_port": 8787,
