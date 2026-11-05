@@ -40,6 +40,12 @@ PAYLOAD = json.dumps(
 
 def build_qos_handler(client):
     class QosHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            if self.path == "/health":
+                self._write_json(200, {"ok": True, "service": "masque", "tunnel_checked": False})
+            else:
+                self._write_json(404, {"ok": False, "error": "not found"})
+
         def do_POST(self) -> None:
             print(
                 f"received HTTP request method=POST path={self.path} "
